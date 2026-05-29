@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>数据格式化打印终端</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; background: #f4f4f9; padding: 10px; margin: 0; }
+    .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 15px; }
+    textarea, select, input[type=text], input[type=password], input[type=number], input[type=date], input[type=time] {
+      width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #ddd;
+      border-radius: 8px; box-sizing: border-box; font-size: 16px;
+    }
+    button { width: 100%; padding: 15px; margin-top: 10px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; }
+    .btn-blue  { background: #007bff; color: white; }
+    .btn-green { background: #28a745; color: white; }
+    .btn-red   { background: #ff4d4f; color: white; width: auto; padding: 5px 10px; font-size: 12px; }
+    .btn-orange{ background: #fd7e14; color: white; }
+    .btn-gray  { background: #6c757d; color: white; }
+    .item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 8px 0; }
+
+    /* 定时面板遮罩 */
+    #schedule-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5); z-index: 100;
+      align-items: flex-start; justify-content: center;
+      padding-top: 20px;
+    }
+    #schedule-overlay.show { display: flex; }
+    #schedule-panel {
+      background: white; border-radius: 16px; width: 96%; max-width: 480px;
+      max-height: 90vh; overflow-y: auto; padding: 16px;
+    }
+    .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .panel-header h3 { margin: 0; font-size: 18px; }
+    .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; width: auto; padding: 0 6px; margin: 0; color: #888; }
+
+    /* 任务卡片 */
+    .job-card {
+      border: 1px solid #e0e0e0; border-radius: 10px; padding: 12px;
+      margin-bottom: 10px; background: #fafafa;
+    }
+    .job-card.disabled { opacity: 0.5; }
+    .job-title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
+    .job-meta { font-size: 13px; color: #666; margin-bottom: 8px; }
+    .job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .job-actions button { width: auto; padding: 6px 12px; font-size: 13px; margin-top: 0; }
+    .btn-toggle-on  { background: #28a745; color: white; border-radius: 6px; border: none; cursor: pointer; }
+    .btn-toggle-off { background: #aaa;    color: white; border-radius: 6px; border: none; cursor: pointer; }
+    .btn-edit       { background: #007bff; color: white; border-radius: 6px; border: none; cursor: pointer; }
+    .btn-del        { background: #ff4d4f; color: white; border-radius: 6px; border: none; cursor: pointer; }
+
+    /* 表单区域 */
+    .form-section { border-top: 1px solid #eee; padding-top: 12px; margin-top: 8px; }
+    .form-section h4 { margin: 0 0 8px 0; font-size: 15px; color: #333; }
+    label.field-label { font-size: 14px; color: #555; margin-top: 10px; display: block; }
+    .row2 { display: flex; gap: 8px; }
+    .row2 > * { flex: 1; }
+
+    /* 条件字段 */
+    .cond-field { display: none; }
+    .cond-field.show { display: block; }
+
+    /* 密码弹窗 */
+    #pwd-modal {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5); z-index: 200;
+      align-items: center; justify-content: center;
+    }
+    #pwd-modal.show { display: flex; }
+    .pwd-box {
+      background: white; border-radius: 14px; padding: 24px 20px;
+      width: 85%; max-width: 320px; text-align: center;
+    }
+    .pwd-box h3 { margin: 0 0 8px 0; font-size: 17px; }
+    .pwd-box p  { font-size: 13px; color: #888; margin: 0 0 12px 0; }
+    .pwd-box input { text-align: center; letter-spacing: 4px; font-size: 22px; }
+    .pwd-box .btn-row { display: flex; gap: 10px; margin-top: 10px; }
+    .pwd-box .btn-row button { flex: 1; margin-top: 0; padding: 12px; }
+
+    /* 页脚隐藏触发区 */
+    #footer-trigger {
+      text-align: center; color: #bbb; font-size: 12px;
+      padding: 20px 0 10px 0; user-select: none; -webkit-tap-highlight-color: transparent;
+    }
+
+    /* 周选择器 */
+    .weekday-picker { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+    .weekday-picker label {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 14px; padding: 6px 10px; border: 1px solid #ddd;
+      border-radius: 20px; cursor: pointer; background: #f8f8f8;
+    }
+    .weekday-picker input[type=checkbox] { width: auto; margin: 0; }
+  </style>
+</head>
+<body>
+
+  <!-- 主界面 -->
+  <div class="card">
+    <h3>1. 粘贴订单</h3>
+    <textarea id="raw_text" rows="4" placeholder="在此粘贴原始订单内容…"></textarea>
+    <div class="row2" style="margin-top:8px">
+      <button class="btn-gray" type="button" onclick="pasteRawText()">一键粘贴</button>
+      <button class="btn-blue" type="button" onclick="doClean()">手动清洗</button>
+    </div>
+    <label>选择清洗方案：</label>
+    <select id="scheme_select">
+      {% for id, info in schemes.items() %}
+      <option value="{{ id }}">{{ info.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="card">
+    <h3>2. 确认并选择打印机</h3>
+    <select id="title_select">
+      {% for t in titles %}<option value="{{t.content}}">{{t.content}}</option>{% endfor %}
+    </select>
+    <textarea id="preview_text" rows="5" placeholder="清洗后内容将显示在此…"></textarea>
+    <select id="printer_select">
+      {% for p in printers %}<option value="{{p.ip}}">{{p.name}} ({{p.ip}})</option>{% endfor %}
+    </select>
+    <button class="btn-green" onclick="doPrint()">开始打印 (自动切分)</button>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>⚙️ 打印机与标题库管理</summary>
+      <h4>打印机</h4>
+      <div id="p_list">
+        {% for p in printers %}
+        <div class="item"><span>{{p.name}}</span><button class="btn-red" onclick="manage('printer','DELETE','{{p.id}}')">删除</button></div>
+        {% endfor %}
+      </div>
+      <input type="text" id="p_name" placeholder="名称">
+      <input type="text" id="p_ip" placeholder="IP">
+      <button class="btn-blue" onclick="manage('printer','POST')">添加打印机</button>
+      <hr>
+      <h4>标题库</h4>
+      <div id="t_list">
+        {% for t in titles %}
+        <div class="item"><span>{{t.content}}</span><button class="btn-red" onclick="manage('title','DELETE','{{t.id}}')">删除</button></div>
+        {% endfor %}
+      </div>
+      <input type="text" id="t_val" placeholder="新标题内容">
+      <button class="btn-blue" onclick="manage('title','POST')">添加标题</button>
+    </details>
+  </div>
+
+  <!-- 页脚隐藏触发区（连点5次进入定时功能） -->
+  <div id="footer-trigger">© 打印终端</div>
+
+  <!-- 密码弹窗 -->
+  <div id="pwd-modal">
+    <div class="pwd-box">
+      <h3 id="pwd-title">🔐 定时功能</h3>
+      <p id="pwd-desc">请输入专属密码</p>
+      <input type="password" id="pwd-input" placeholder="密码" maxlength="20">
+      <div class="btn-row">
+        <button class="btn-gray" onclick="closePwdModal()">取消</button>
+        <button class="btn-blue" onclick="submitPwd()">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 定时功能面板 -->
+  <div id="schedule-overlay">
+    <div id="schedule-panel">
+      <div class="panel-header">
+        <h3>⏰ 定时打印任务</h3>
+        <button class="close-btn" onclick="closeSchedule()">✕</button>
+      </div>
+
+      <!-- 任务列表 -->
+      <div id="job-list"><!-- 动态渲染 --></div>
+
+      <!-- 新建/编辑表单 -->
+      <div class="form-section">
+        <h4 id="form-title">＋ 新建任务</h4>
+        <input type="hidden" id="edit-job-id" value="">
+
+        <label class="field-label">任务备注名</label>
+        <input type="text" id="f-name" placeholder="例：早班备餐单">
+
+        <label class="field-label">打印机</label>
+        <select id="f-printer">
+          {% for p in printers %}<option value="{{p.ip}}">{{p.name}} ({{p.ip}})</option>{% endfor %}
+        </select>
+
+        <label class="field-label">打印标题</label>
+        <select id="f-title">
+          {% for t in titles %}<option value="{{t.content}}">{{t.content}}</option>{% endfor %}
+        </select>
+
+        <label class="field-label">打印内容（每行一条）</label>
+        <textarea id="f-content" rows="4" placeholder="每行打印一条，支持多行"></textarea>
+
+        <label class="field-label">循环类型</label>
+        <select id="f-type" onchange="onTypeChange()">
+          <option value="once">一次性</option>
+          <option value="daily">每天</option>
+          <option value="weekly">每周</option>
+          <option value="monthly">每月</option>
+        </select>
+
+        <!-- 一次性：日期+时间 -->
+        <div id="cond-once" class="cond-field show">
+          <label class="field-label">执行日期与时间</label>
+          <div class="row2">
+            <input type="date" id="f-date">
+            <input type="time" id="f-time" value="08:00">
+          </div>
+        </div>
+
+        <!-- 每天：只需时间 -->
+        <div id="cond-daily" class="cond-field">
+          <label class="field-label">每天执行时间</label>
+          <input type="time" id="f-time-daily" value="08:00">
+        </div>
+
+        <!-- 每周 -->
+        <div id="cond-weekly" class="cond-field">
+          <label class="field-label">选择星期</label>
+          <div class="weekday-picker">
+            <label><input type="checkbox" class="wd" value="0"> 周一</label>
+            <label><input type="checkbox" class="wd" value="1"> 周二</label>
+            <label><input type="checkbox" class="wd" value="2"> 周三</label>
+            <label><input type="checkbox" class="wd" value="3"> 周四</label>
+            <label><input type="checkbox" class="wd" value="4"> 周五</label>
+            <label><input type="checkbox" class="wd" value="5"> 周六</label>
+            <label><input type="checkbox" class="wd" value="6"> 周日</label>
+          </div>
+          <label class="field-label">执行时间</label>
+          <input type="time" id="f-time-weekly" value="08:00">
+        </div>
+
+        <!-- 每月 -->
+        <div id="cond-monthly" class="cond-field">
+          <label class="field-label">每月第几日</label>
+          <input type="number" id="f-monthday" min="1" max="31" value="1" placeholder="1-31">
+          <label class="field-label">执行时间</label>
+          <input type="time" id="f-time-monthly" value="08:00">
+        </div>
+
+        <button class="btn-green" onclick="saveJob()" style="margin-top:14px">保存任务</button>
+        <button class="btn-gray" onclick="resetForm()" id="cancel-edit-btn" style="display:none">取消编辑</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ===== 主功能 =====
+async function doClean() {
+  const raw = document.getElementById('raw_text').value;
+  const sid = document.getElementById('scheme_select').value;
+  const res = await fetch('/api/clean', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({raw_text: raw, scheme_id: sid})
+  });
+  const data = await res.json();
+  document.getElementById('preview_text').value = data.cleaned;
+}
+
+async function pasteRawText() {
+  const input = document.getElementById('raw_text');
+  try {
+    const text = await navigator.clipboard.readText();
+    input.value = text;
+    input.focus();
+    input.setSelectionRange(text.length, text.length);
+  } catch (err) {
+    alert('无法直接读取剪贴板，请先允许浏览器访问剪贴板，再重试。');
+  }
+}
+
+async function doPrint() {
+  const payload = {
+    ip: document.getElementById('printer_select').value,
+    title: document.getElementById('title_select').value,
+    content: document.getElementById('preview_text').value
+  };
+  await fetch('/api/print', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload)
+  });
+  alert('打印完成');
+}
+
+async function manage(target, method, id=null) {
+  let body = null;
+  if (method === 'POST') {
+    body = target === 'printer'
+      ? {name: document.getElementById('p_name').value, ip: document.getElementById('p_ip').value}
+      : {content: document.getElementById('t_val').value};
+  }
+  await fetch(`/api/manage/${target}${id ? '?id='+id : ''}`, {
+    method, headers: {'Content-Type':'application/json'},
+    body: body ? JSON.stringify(body) : null
+  });
+  location.reload();
+}
+
+// ===== 隐藏触发：连点5次 =====
+let tapCount = 0, tapTimer = null;
+document.getElementById('footer-trigger').addEventListener('click', () => {
+  tapCount++;
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => { tapCount = 0; }, 1500);
+  if (tapCount >= 5) {
+    tapCount = 0;
+    openScheduleEntry();
+  }
+});
+
+// ===== 密码弹窗 =====
+let pwdCallback = null;
+
+function showPwdModal(title, desc, cb) {
+  document.getElementById('pwd-title').textContent = title;
+  document.getElementById('pwd-desc').textContent = desc;
+  document.getElementById('pwd-input').value = '';
+  pwdCallback = cb;
+  document.getElementById('pwd-modal').classList.add('show');
+  setTimeout(() => document.getElementById('pwd-input').focus(), 100);
+}
+
+function closePwdModal() {
+  document.getElementById('pwd-modal').classList.remove('show');
+  pwdCallback = null;
+}
+
+async function submitPwd() {
+  const pwd = document.getElementById('pwd-input').value.trim();
+  if (!pwd) return;
+  if (pwdCallback) await pwdCallback(pwd);
+}
+
+// ===== 进入定时功能入口 =====
+async function openScheduleEntry() {
+  const res = await fetch('/api/schedule/status');
+  const data = await res.json();
+
+  if (data.authed) {
+    openSchedulePanel();
+    return;
+  }
+
+  if (!data.has_password) {
+    showPwdModal('🔐 设置专属密码', '首次使用，请设置定时功能密码（至少4位）', async (pwd) => {
+      const r = await fetch('/api/schedule/auth', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({password: pwd})
+      });
+      const d = await r.json();
+      if (d.error) { alert(d.error); return; }
+      closePwdModal();
+      alert('密码已设置，请牢记！');
+      openSchedulePanel();
+    });
+  } else {
+    showPwdModal('🔐 定时功能', '请输入专属密码', async (pwd) => {
+      const r = await fetch('/api/schedule/auth', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({password: pwd})
+      });
+      const d = await r.json();
+      if (d.error) { alert(d.error); return; }
+      closePwdModal();
+      openSchedulePanel();
+    });
+  }
+}
+
+// ===== 定时面板 =====
+function openSchedulePanel() {
+  document.getElementById('schedule-overlay').classList.add('show');
+  loadJobs();
+  // 设置日期默认值为今天
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('f-date').value = today;
+}
+
+function closeSchedule() {
+  document.getElementById('schedule-overlay').classList.remove('show');
+}
+
+const typeLabels = {once:'一次性', daily:'每天', weekly:'每周', monthly:'每月'};
+const weekLabels = ['周一','周二','周三','周四','周五','周六','周日'];
+
+function jobMetaText(j) {
+  if (j.job_type === 'once') return `一次性 · ${j.run_date} ${j.run_at}`;
+  if (j.job_type === 'daily') return `每天 ${j.run_at}`;
+  if (j.job_type === 'weekly') {
+    const days = (j.weekday||'').split(',').map(d => weekLabels[parseInt(d)]||d).join('、');
+    return `每周${days} ${j.run_at}`;
+  }
+  if (j.job_type === 'monthly') return `每月${j.monthday}日 ${j.run_at}`;
+  return '';
+}
+
+async function loadJobs() {
+  const res = await fetch('/api/schedule/jobs');
+  if (res.status === 401) { alert('会话已过期，请重新验证'); closeSchedule(); return; }
+  const jobs = await res.json();
+  const el = document.getElementById('job-list');
+  if (!jobs.length) { el.innerHTML = '<p style="color:#aaa;font-size:14px;text-align:center;padding:10px 0">暂无定时任务</p>'; return; }
+  el.innerHTML = jobs.map(j => `
+    <div class="job-card ${j.enabled ? '' : 'disabled'}" id="jcard-${j.id}">
+      <div class="job-title">${escHtml(j.name)}</div>
+      <div class="job-meta">
+        📅 ${jobMetaText(j)}<br>
+        🖨️ ${escHtml(j.printer_ip)} &nbsp;·&nbsp; 📄 ${escHtml(j.title)}<br>
+        📝 ${escHtml(j.content.replace(/\n/g,'、').substring(0,40))}${j.content.length>40?'…':''}
+      </div>
+      <div class="job-actions">
+        <button class="${j.enabled ? 'btn-toggle-on' : 'btn-toggle-off'}" onclick="toggleJob(${j.id})">${j.enabled ? '✅ 启用' : '⏸ 禁用'}</button>
+        <button class="btn-edit" onclick="editJob(${j.id})">✏️ 编辑</button>
+        <button class="btn-del" onclick="deleteJob(${j.id})">🗑 删除</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function toggleJob(id) {
+  await fetch(`/api/schedule/jobs/${id}/toggle`, {method:'POST'});
+  loadJobs();
+}
+
+async function deleteJob(id) {
+  if (!confirm('确定删除此任务？')) return;
+  await fetch(`/api/schedule/jobs/${id}`, {method:'DELETE'});
+  loadJobs();
+}
+
+// ===== 表单 =====
+function onTypeChange() {
+  const t = document.getElementById('f-type').value;
+  ['once','daily','weekly','monthly'].forEach(k => {
+    document.getElementById('cond-'+k).classList.toggle('show', k === t);
+  });
+}
+
+function resetForm() {
+  document.getElementById('edit-job-id').value = '';
+  document.getElementById('form-title').textContent = '＋ 新建任务';
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-content').value = '';
+  document.getElementById('f-type').value = 'once';
+  document.querySelectorAll('.wd').forEach(c => c.checked = false);
+  document.getElementById('f-monthday').value = '1';
+  document.getElementById('f-time').value = '08:00';
+  document.getElementById('f-time-daily').value = '08:00';
+  document.getElementById('f-time-weekly').value = '08:00';
+  document.getElementById('f-time-monthly').value = '08:00';
+  onTypeChange();
+  document.getElementById('cancel-edit-btn').style.display = 'none';
+}
+
+async function editJob(id) {
+  const res = await fetch('/api/schedule/jobs');
+  const jobs = await res.json();
+  const j = jobs.find(x => x.id === id);
+  if (!j) return;
+
+  document.getElementById('edit-job-id').value = j.id;
+  document.getElementById('form-title').textContent = '✏️ 编辑任务';
+  document.getElementById('f-name').value = j.name;
+  document.getElementById('f-content').value = j.content;
+  document.getElementById('f-type').value = j.job_type;
+
+  // 设置打印机
+  const pSel = document.getElementById('f-printer');
+  for (let o of pSel.options) if (o.value === j.printer_ip) { o.selected = true; break; }
+  // 设置标题
+  const tSel = document.getElementById('f-title');
+  for (let o of tSel.options) if (o.value === j.title) { o.selected = true; break; }
+
+  onTypeChange();
+  if (j.job_type === 'once') {
+    document.getElementById('f-date').value = j.run_date || '';
+    document.getElementById('f-time').value = j.run_at || '08:00';
+  } else if (j.job_type === 'daily') {
+    document.getElementById('f-time-daily').value = j.run_at || '08:00';
+  } else if (j.job_type === 'weekly') {
+    document.querySelectorAll('.wd').forEach(c => c.checked = false);
+    (j.weekday || '').split(',').forEach(v => {
+      const cb = document.querySelector(`.wd[value="${v.trim()}"]`);
+      if (cb) cb.checked = true;
+    });
+    document.getElementById('f-time-weekly').value = j.run_at || '08:00';
+  } else if (j.job_type === 'monthly') {
+    document.getElementById('f-monthday').value = j.monthday || 1;
+    document.getElementById('f-time-monthly').value = j.run_at || '08:00';
+  }
+
+  document.getElementById('cancel-edit-btn').style.display = '';
+  document.getElementById('schedule-panel').scrollTop = 999;
+}
+
+async function saveJob() {
+  const type = document.getElementById('f-type').value;
+  const name = document.getElementById('f-name').value.trim() || '未命名任务';
+  const content = document.getElementById('f-content').value.trim();
+  const printer_ip = document.getElementById('f-printer').value;
+  const title = document.getElementById('f-title').value;
+  const editId = document.getElementById('edit-job-id').value;
+
+  if (!content) { alert('请填写打印内容'); return; }
+
+  let run_at = '08:00', run_date = null, weekday = null, monthday = null;
+
+  if (type === 'once') {
+    run_date = document.getElementById('f-date').value;
+    run_at   = document.getElementById('f-time').value;
+    if (!run_date) { alert('请选择执行日期'); return; }
+  } else if (type === 'daily') {
+    run_at = document.getElementById('f-time-daily').value;
+  } else if (type === 'weekly') {
+    const checked = [...document.querySelectorAll('.wd:checked')].map(c => c.value);
+    if (!checked.length) { alert('请至少选择一个星期'); return; }
+    weekday = checked.join(',');
+    run_at  = document.getElementById('f-time-weekly').value;
+  } else if (type === 'monthly') {
+    monthday = parseInt(document.getElementById('f-monthday').value);
+    run_at   = document.getElementById('f-time-monthly').value;
+  }
+
+  const payload = { name, printer_ip, title, content, job_type: type, run_at, run_date, weekday, monthday };
+
+  let res;
+  if (editId) {
+    res = await fetch(`/api/schedule/jobs/${editId}`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+  } else {
+    res = await fetch('/api/schedule/jobs', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+    });
+  }
+  const d = await res.json();
+  if (d.error) { alert(d.error); return; }
+  resetForm();
+  loadJobs();
+  alert(editId ? '任务已更新' : '任务已创建');
+}
+
+function escHtml(str) {
+  return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// 初始化
+onTypeChange();
+</script>
+</body>
+</html>
